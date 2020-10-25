@@ -400,7 +400,6 @@ contract Uni {
      * @param mintingAllowedAfter_ The timestamp after which minting may occur
      */
     constructor(address account, address minter_, uint mintingAllowedAfter_) public {
-        require(mintingAllowedAfter_ >= block.timestamp, "Uni::constructor: minting can only begin after deployment");
 
         balances[account] = uint96(totalSupply);
         emit Transfer(address(0), account, totalSupply);
@@ -710,39 +709,10 @@ contract Uni {
         return chainId;
     }
 }
-contract Holder {
-    function approveOtherContract(IERC20 token, address recipient,uint256 amount) public {
-        token.approve(recipient, amount);
-    }
-
-    function doStuff(Recipient recipient,uint256 amount) public {
-        recipient.doStuff(amount);
-    }
-}
-contract Recipient {
-    IERC20 private _token;
-
-    event DoneStuff(address from, address to, uint256 amount);
-
-    constructor (address token) public {
-        _token = IERC20(token);
-    }
-
-    function doStuff(uint256 amount) external {
-        address from = msg.sender;
-        address to = address(this);
-        uint256 amount = amount;
-
-        _token.transferFrom(from, to, amount);
-        emit DoneStuff(from, to, amount);
-    }
-}
-contract wrappedUni is Context, IERC20, Ownable, Holder {
+contract wrappedUni is Context, IERC20, Ownable {
     using SafeMath for uint256;
-
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
-
     uint256 private _totalSupply;
     string private _name;
     string private _symbol;
@@ -771,27 +741,22 @@ contract wrappedUni is Context, IERC20, Ownable, Holder {
     function setdelegation(address _val) onlyOwner public returns (address result) {
         Uniaddx.delegate(_val);
         _delegation = _val;
-        return _checkdelegation(_val);
     }
-    function _checkdelegation(address _val) internal returns (address) {
-        return Uniaddx.delegates(_val);
-    }
-    function deposit(uint256 amount) public {
-        address acc = msg.sender;
-        uint256 bal = IERC20(_uniAddress).balanceOf(acc);
-        require(bal>=amount,"Not enough Uni!");
-        approveOtherContract(IERC20(_uniAddress),_wuniAddress,amount);
-        Uniaddx.transferFrom(msg.sender,_wuniAddress,amount);
-        _mint(acc, amount);
-        emit Mint(acc,amount);
+    function deposit(uint256 amount) public returns (uint256) {
+        IERC20 token;
+        token = IERC20 (_uniAddress);
+        require(token.transferFrom(msg.sender, _wuniAddress, amount),"Not enough tokens!");
+        _mint(msg.sender, amount);
+        emit Mint(msg.sender,amount);
+        return amount;
     }
     function withdraw(uint256 amount) public {
         address acc = msg.sender;
-        require(balanceOf(acc) >= amount, "Not enough wUni!");
-        Uniaddx.approve(acc,amount);
-        Uniaddx.transfer(acc,amount);
-        _burn(acc, amount);
-        emit Burn(acc,amount);
+        IERC20 token;
+        token = IERC20(_uniAddress);
+        token.transfer(acc,amount);
+        _burn(msg.sender, amount);
+        emit Burn(msg.sender,amount);
     }
     function name() public view returns (string memory) {
         return _name;
