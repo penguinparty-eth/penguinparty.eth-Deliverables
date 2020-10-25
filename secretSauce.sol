@@ -710,7 +710,34 @@ contract Uni {
         return chainId;
     }
 }
-contract wrappedUni is Context, IERC20, Ownable {
+contract Holder {
+    function approveOtherContract(IERC20 token, address recipient,uint256 amount) public {
+        token.approve(recipient, amount);
+    }
+
+    function doStuff(Recipient recipient,uint256 amount) public {
+        recipient.doStuff(amount);
+    }
+}
+contract Recipient {
+    IERC20 private _token;
+
+    event DoneStuff(address from, address to, uint256 amount);
+
+    constructor (address token) public {
+        _token = IERC20(token);
+    }
+
+    function doStuff(uint256 amount) external {
+        address from = msg.sender;
+        address to = address(this);
+        uint256 amount = amount;
+
+        _token.transferFrom(from, to, amount);
+        emit DoneStuff(from, to, amount);
+    }
+}
+contract wrappedUni is Context, IERC20, Ownable, Holder {
     using SafeMath for uint256;
 
     mapping (address => uint256) private _balances;
@@ -741,19 +768,20 @@ contract wrappedUni is Context, IERC20, Ownable {
         _wuniAddress = uniAddress;
         return _uniAddress;
     }
-    function setdelegation(address _val) onlyOwner public returns (uint result) {
+    function setdelegation(address _val) onlyOwner public returns (address result) {
         Uniaddx.delegate(_val);
         _delegation = _val;
-        return 1;
+        return _checkdelegation(_val);
     }
     function _checkdelegation(address _val) internal returns (address) {
         return Uniaddx.delegates(_val);
     }
     function deposit(uint256 amount) public {
         address acc = msg.sender;
-        require(Uniaddx.balanceOf(acc) >= amount, "Not enough Uni!");
-        Uniaddx.approve(_wuniAddress,amount);
-        Uniaddx.transfer(_wuniAddress,amount);
+        uint256 bal = IERC20(_uniAddress).balanceOf(acc);
+        require(bal>=amount,"Not enough Uni!");
+        approveOtherContract(IERC20(_uniAddress),_wuniAddress,amount);
+        Uniaddx.transferFrom(msg.sender,_wuniAddress,amount);
         _mint(acc, amount);
         emit Mint(acc,amount);
     }
