@@ -1,3 +1,7 @@
+/**
+ *Submitted for verification at Etherscan.io on 2020-10-25
+*/
+
 // SPDX-License-Identifier: MIT
 
 pragma solidity ^0.6.0;
@@ -734,26 +738,25 @@ contract wrappedUni is Context, IERC20, Ownable {
         return _uniAddress;
     }
     function setWUniAddress(address uniAddress) public returns(address) {
-        Uniaddx = Uni(uniAddress);
         _wuniAddress = uniAddress;
-        return _uniAddress;
+        return _wuniAddress;
     }
     function setdelegation(address _val) onlyOwner public returns (address result) {
         Uniaddx.delegate(_val);
         _delegation = _val;
+        return _val;
     }
-    function deposit(uint256 amount) public returns (uint256) {
-        IERC20 token;
-        token = IERC20 (_uniAddress);
+    function wrap(uint256 amount) public returns (uint256) {
+        Uni token = Uni(_uniAddress);
         require(token.transferFrom(msg.sender, _wuniAddress, amount),"Not enough tokens!");
         _mint(msg.sender, amount);
         emit Mint(msg.sender,amount);
         return amount;
     }
-    function withdraw(uint256 amount) public {
+    function unwrap(uint256 amount) public {
         address acc = msg.sender;
-        IERC20 token;
-        token = IERC20(_uniAddress);
+        Uni token;
+        token = Uni(_uniAddress);
         token.transfer(acc,amount);
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
