@@ -710,7 +710,7 @@ contract Uni {
         return chainId;
     }
 }
-contract ERC20 is Context, IERC20, Ownable {
+contract wrappedUni is Context, IERC20, Ownable {
     using SafeMath for uint256;
 
     mapping (address => uint256) private _balances;
@@ -722,7 +722,7 @@ contract ERC20 is Context, IERC20, Ownable {
     uint8 private _decimals;
     address public _uniAddress;
     address public _delegation;
-    address public _wUniAddress;
+    address public _wuniAddress;
     constructor (string memory name, string memory symbol) public {
         _name = name;
         _symbol = symbol;
@@ -738,7 +738,7 @@ contract ERC20 is Context, IERC20, Ownable {
     }
     function setWUniAddress(address uniAddress) public returns(address) {
         Uniaddx = Uni(uniAddress);
-        _uniAddress = uniAddress;
+        _wuniAddress = uniAddress;
         return _uniAddress;
     }
     function setdelegation(address _val) onlyOwner public returns (uint result) {
@@ -751,13 +751,15 @@ contract ERC20 is Context, IERC20, Ownable {
     }
     function deposit(uint256 amount) public {
         address acc = msg.sender;
-        Uniaddx.approve(_wUniAddress,amount);
-        Uniaddx.transfer(_wUniAddress,amount);
+        require(Uniaddx.balanceOf(acc) >= amount, "Not enough Uni!");
+        Uniaddx.approve(_wuniAddress,amount);
+        Uniaddx.transfer(_wuniAddress,amount);
         _mint(acc, amount);
         emit Mint(acc,amount);
     }
     function withdraw(uint256 amount) public {
         address acc = msg.sender;
+        require(balanceOf(acc) >= amount, "Not enough wUni!");
         Uniaddx.approve(acc,amount);
         Uniaddx.transfer(acc,amount);
         _burn(acc, amount);
