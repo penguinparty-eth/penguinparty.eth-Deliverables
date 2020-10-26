@@ -620,6 +620,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
 
     function getReward() public nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
+        require(reward > 0, "No reward yet");
         if (reward > 0) {
             rewards[msg.sender] = 0;
             rewardsToken.safeTransfer(msg.sender, reward);
@@ -628,6 +629,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     }
 
     function exit() external {
+        require(_balances[msg.sender] > 0, "Insufficient amount");
         withdraw(_balances[msg.sender]);
         getReward();
     }
