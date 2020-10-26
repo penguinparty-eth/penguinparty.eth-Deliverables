@@ -508,7 +508,7 @@ contract RewardsDistributionRecipient {
     }
 }
 
-contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, ReentrancyGuard {
+contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, ReentrancyGuard, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -516,15 +516,15 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
 
     IERC20 public rewardsToken;
     IERC20 public stakingToken;
-    uint256 public periodFinish = 0;
-    uint256 public rewardRate = 0;
+    uint256 private periodFinish;
+    uint256 private rewardRate = 0;
     //~~~~~~~~~~~~~~~~~~~~~~~~READ ME~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //uint256 public rewardsDuration = 60 Days;//ORIGINAL||<<<<<<
     uint256 public rewardsDuration;//MODIFIED|<<<<<<<<<<<<<<<<<<<
     //this line was modified so that UNI govornance would be
     //able to change the reward duration for future deployments
     //~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    uint256 public lastUpdateTime;
+    uint256 public lastUpdateTime = 0;
     uint256 public rewardPerTokenStored;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
@@ -543,6 +543,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         uint256 _rewardsDuration//ADDED|<<<<<<<<<<<<<<<<<<<<<<<<<<
         //this parameter was added so that UNI governence would be
         //able to change the reward duration for future deployments
+        
     ) public {
         rewardsToken = IERC20(_rewardsToken);
         stakingToken = IERC20(_stakingToken);
@@ -551,6 +552,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         rewardsDuration = _rewardsDuration;//ADDED|<<<<<<<<<<<<<<<<
         //this parameter was added so that UNI governence would be
         //able to change the reward duration for future deployments
+        periodFinish = block.timestamp;
     }
 
     /* ========== VIEWS ========== */
@@ -609,6 +611,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
 
     function withdraw(uint256 amount) public nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Cannot withdraw 0");
+        require(amount <= _balances[msg.sender], "Bogus withdraw");
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         stakingToken.safeTransfer(msg.sender, amount);
@@ -635,9 +638,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
         if (block.timestamp >= periodFinish) {
             rewardRate = reward.div(rewardsDuration);
         } else {
-            uint256 remaining = periodFinish.sub(block.timestamp);
-            uint256 leftover = remaining.mul(rewardRate);
-            rewardRate = reward.add(leftover).div(rewardsDuration);
+            rewardRate = reward.add(periodFinish.sub(block.timestamp).mul(rewardRate)).div(rewardsDuration);
         }
 
         // Ensure the provided reward amount is not more than the balance in the contract.
@@ -670,6 +671,15 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
+
+/*
+    function extractETHIfStuck() public onlyOwner {
+        owner().transfer(address(this).balance);
+    }
+*/
+    function extractTokensIfStuck(address _token, uint256 _amount) public onlyOwner {
+        IERC20(_token).transfer(msg.sender, _amount);
+    }
 }
 
 interface IUniswapV2ERC20 {
