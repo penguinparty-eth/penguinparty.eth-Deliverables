@@ -611,7 +611,7 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
 
     function withdraw(uint256 amount) public nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Cannot withdraw 0");
-        require(amount <= _balances[msg.sender], "Bogus withdraw");
+        require(amount <= _balances[msg.sender] && _balances[msg.sender] > 0, "Bogus withdraw");
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         stakingToken.safeTransfer(msg.sender, amount);
