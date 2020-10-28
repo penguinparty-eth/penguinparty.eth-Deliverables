@@ -7,9 +7,6 @@
 pragma solidity ^0.6.0;
 
 
-
-
-
 /*
  * @dev Provides information about the current execution context, including the
  * sender of the transaction and its data. While these are generally available
@@ -732,27 +729,27 @@ contract wrappedUni is Context, IERC20, Ownable {
         Uni Uniaddx;
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
-    function setUniAddress(address uniAddress) onlyOwner public returns(address) {
+    function setUniAddress(address uniAddress) onlyOwner public {
         Uniaddx = Uni(uniAddress);
         _uniAddress = uniAddress;
-        return _uniAddress;
     }
-    function setWUniAddress(address uniAddress) onlyOwner public returns(address) {
+
+    function setWUniAddress(address uniAddress) onlyOwner public {
         _wuniAddress = uniAddress;
-        return _wuniAddress;
     }
-    function setdelegation(address _val) onlyOwner public returns (address result) {
+
+    function setdelegation(address _val) onlyOwner public {
         Uniaddx.delegate(_val);
         _delegation = _val;
-        return _val;
     }
-    function wrap(uint256 amount) public returns (uint256) {
+
+    function wrap(uint256 amount) public {
         Uni token = Uni(_uniAddress);
         require(token.transferFrom(msg.sender, _wuniAddress, amount),"Not enough tokens!");
         _mint(msg.sender, amount);
         emit Mint(msg.sender,amount);
-        return amount;
     }
+
     function unwrap(uint256 amount) public {
         address acc = msg.sender;
         Uni token;
@@ -761,7 +758,8 @@ contract wrappedUni is Context, IERC20, Ownable {
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
     }
-    function name() public view returns (string memory) {
+
+    function name() external view returns (string memory) {
         return _name;
     }
 
@@ -769,7 +767,7 @@ contract wrappedUni is Context, IERC20, Ownable {
      * @dev Returns the symbol of the token, usually a shorter version of the
      * name.
      */
-    function symbol() public view returns (string memory) {
+    function symbol() external view returns (string memory) {
         return _symbol;
     }
 
@@ -786,20 +784,20 @@ contract wrappedUni is Context, IERC20, Ownable {
      * no way affects any of the arithmetic of the contract, including
      * {IERC20-balanceOf} and {IERC20-transfer}.
      */
-    function decimals() public view returns (uint8) {
+    function decimals() external view returns (uint8) {
         return _decimals;
     }
 
     /**
      * @dev See {IERC20-totalSupply}.
      */
-    function totalSupply() public view override returns (uint256) {
+    function totalSupply() external view override returns (uint256) {
         return _totalSupply;
     }
     /**
      * @dev See {IERC20-balanceOf}.
      */
-    function balanceOf(address account) public view override returns (uint256) {
+    function balanceOf(address account) external view override returns (uint256) {
         return _balances[account];
     }
     /**
