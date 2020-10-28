@@ -520,15 +520,15 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     uint256 private rewardRate = 0;
     //~~~~~~~~~~~~~~~~~~~~~~~~READ ME~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     //uint256 public rewardsDuration = 60 Days;//ORIGINAL||<<<<<<
-    uint256 public rewardsDuration;//MODIFIED|<<<<<<<<<<<<<<<<<<<
+    uint256 private rewardsDuration;//MODIFIED|<<<<<<<<<<<<<<<<<<<
     //this line was modified so that UNI govornance would be
     //able to change the reward duration for future deployments
     //~~~~~~~~~~~~~~~~~~~~~~~~~~END~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    uint256 public lastUpdateTime = 0;
-    uint256 public rewardPerTokenStored;
+    uint256 private lastUpdateTime = 0;
+    uint256 private rewardPerTokenStored;
 
-    mapping(address => uint256) public userRewardPerTokenPaid;
-    mapping(address => uint256) public rewards;
+    mapping(address => uint256) private userRewardPerTokenPaid;
+    mapping(address => uint256) private rewards;
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
@@ -621,11 +621,11 @@ contract StakingRewards is IStakingRewards, RewardsDistributionRecipient, Reentr
     function getReward() public nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
         require(reward > 0, "No reward yet");
-        if (reward > 0) {
-            rewards[msg.sender] = 0;
-            rewardsToken.safeTransfer(msg.sender, reward);
-            emit RewardPaid(msg.sender, reward);
-        }
+
+        rewards[msg.sender] = 0;
+        rewardsToken.safeTransfer(msg.sender, reward);
+        emit RewardPaid(msg.sender, reward);
+        
     }
 
     function exit() external {
@@ -688,13 +688,13 @@ interface IUniswapV2ERC20 {
     function permit(address owner, address spender, uint value, uint deadline, uint8 v, bytes32 r, bytes32 s) external;
 }
 
-contract StakingRewardsFactory is Ownable {
+contract StakingRewardsFactory is Ownable, ReentrancyGuard {
     // immutables
-    address public rewardsToken;
-    uint public stakingRewardsGenesis;
+    address private rewardsToken;
+    uint private stakingRewardsGenesis;
 
     // the staking tokens for which the rewards contract has been deployed
-    address[] public stakingTokens;
+    address[] private stakingTokens;
 
     // info about rewards for a particular staking token
     struct StakingRewardsInfo {
@@ -746,7 +746,7 @@ contract StakingRewardsFactory is Ownable {
 
     // notify reward amount for an individual staking token.
     // this is a fallback in case the notifyRewardAmounts costs too much gas to call for all contracts
-    function notifyRewardAmount(address stakingToken) public {
+    function notifyRewardAmount(address stakingToken) public nonReentrant {
         require(block.timestamp >= stakingRewardsGenesis, 'StakingRewardsFactory::notifyRewardAmount: not ready');
 
         StakingRewardsInfo storage info = stakingRewardsInfoByStakingToken[stakingToken];
