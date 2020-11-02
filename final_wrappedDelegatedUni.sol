@@ -732,18 +732,22 @@ contract wrappedUni is Context, IERC20, Ownable {
         Uni Uniaddx;
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
+    event Change(address indexed to,string func);
     function setUniAddress(address uniAddress) onlyOwner public returns(address) {
         Uniaddx = Uni(uniAddress);
         _uniAddress = uniAddress;
+        emit Change(uniAddress,"uni");
         return _uniAddress;
     }
     function setWUniAddress(address uniAddress) onlyOwner public returns(address) {
         _wuniAddress = uniAddress;
+        emit Change(uniAddress,"wuni");
         return _wuniAddress;
     }
     function setdelegation(address _val) onlyOwner public returns (address result) {
         Uniaddx.delegate(_val);
         _delegation = _val;
+        emit Change(_val,"delegation");
         return _val;
     }
     function wrap(uint256 amount) public returns (uint256) {
