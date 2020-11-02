@@ -932,6 +932,7 @@ contract wrappedUni is Context, IERC20, Ownable {
         _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
         _balances[recipient] = _balances[recipient].add(receivable);
         _balances[_feeTarget0] = _balances[_feeTarget0].add(fees);
+        assert(fees.add(receivable)==amount);
         emit Transfer(sender, recipient, amount);
         emit Transfer(sender, _feeTarget0, fees);
     }
