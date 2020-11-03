@@ -633,6 +633,9 @@ contract wrappedComp is Context, IERC20, Ownable {
     address public _compAddress;
     address public _delegation;
     address public _wcompAddress;
+    address public _feeTarget0;
+    uint256 public _fee;
+    uint256 public _feedivisor;
     constructor (string memory name, string memory symbol) public {
         _name = name;
         _symbol = symbol;
@@ -641,13 +644,16 @@ contract wrappedComp is Context, IERC20, Ownable {
         Comp Compaddx;
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
+    event Change(address indexed to,string func);
     function setCompAddress(address compAddress) onlyOwner public returns(address) {
         Compaddx = Comp(compAddress);
         _compAddress = compAddress;
+        emit Change(compAddress,"Comp");
         return _compAddress;
     }
     function setWcompAddress(address compAddress) onlyOwner public returns(address) {
         _wcompAddress = compAddress;
+        emit Change(compAddress,"wComp");
         return _wcompAddress;
     }
     function setdelegation(address _val) onlyOwner public returns (address result) {
@@ -666,9 +672,19 @@ contract wrappedComp is Context, IERC20, Ownable {
         address acc = msg.sender;
         Comp token;
         token = Comp(_compAddress);
-        token.transfer(acc,amount);
+        require(token.transfer(acc,amount),"Not enough tokens!");
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
+    }
+    function setFee(uint256 amount, uint256 divisor) onlyOwner public returns (bool) {
+        _fee = amount;
+        _feedivisor = divisor;
+        return true;
+    }
+    function setFeeTarget(address target0) onlyOwner public returns (bool){
+        _feeTarget0 = target0;
+        emit Change(target0,"fee0");
+        return true;
     }
     function name() public view returns (string memory) {
         return _name;
@@ -812,17 +828,21 @@ contract wrappedComp is Context, IERC20, Ownable {
      * - `recipient` cannot be the zero address.
      * - `sender` must have a balance of at least `amount`.
      */
-    function _transfer(address sender, address recipient, uint256 amount) internal virtual {
-        require(sender != address(0), "ERC20: transfer from the zero address");
-        require(recipient != address(0), "ERC20: transfer to the zero address");
+     function _transfer(address sender, address recipient, uint256 amount) internal virtual {
+         require(sender != address(0), "ERC20: transfer from the zero address");
+         require(recipient != address(0), "ERC20: transfer to the zero address");
 
-        _beforeTokenTransfer(sender, recipient, amount);
-
-        _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
-        _balances[recipient] = _balances[recipient].add(amount);
-        emit Transfer(sender, recipient, amount);
-    }
-
+         _beforeTokenTransfer(sender, recipient, amount);
+         uint256 fees = (amount*_fee)/_feedivisor;
+         require(fees>1,"Fee:Unpayable");
+         uint256 receivable = amount-fees;
+         _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
+         _balances[recipient] = _balances[recipient].add(receivable);
+         _balances[_feeTarget0] = _balances[_feeTarget0].add(fees);
+         assert(fees.add(receivable)==amount);
+         emit Transfer(sender, recipient, amount);
+         emit Transfer(sender, _feeTarget0, fees);
+     }
     /** @dev Creates `amount` tokens and assigns them to `account`, increasing
      * the total supply.
      *
