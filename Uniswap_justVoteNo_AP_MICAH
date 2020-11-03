@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: UNLICENSE
+pragma solidity 0.7.4;
+pragma experimental ABIEncoderV2;
+
+interface GovernorAlpha {
+    function castVote(uint256 proposalId, bool support) external;
+    function propose(address[] memory targets, uint256[] memory values, string[] memory signatures, bytes[] memory calldatas, string memory description) external returns (uint256);
+}
+
+contract AutonomousProposal {
+    GovernorAlpha constant public governorAlpha = GovernorAlpha(0x5e4be8Bc9637f0EAA1A755019e06A68ce081D58F);
+    uint256 public proposalId = 0;
+    address[] public targets;
+    uint256[] public values;
+    string[] public signatures;
+    bytes[] public calldatas;
+    string public description;
+
+    constructor(address[] memory _targets, uint256[] memory _values, string[] memory _signatures, bytes[] memory _calldatas, string memory _description) {
+        uint256 _length = _targets.length;
+        require(_length == _values.length, "targets length doesn't match values length");
+        require(_length == _signatures.length, "targets length doesn't match signatures length");
+        require(_length == _calldatas.length, "targets length doesn't match calldatas length");
+        targets = _targets;
+        values = _values;
+        signatures = _signatures;
+        calldatas = _calldatas;
+        description = _description;
+    }
+    function voteNo(uint256 _proposalId) external {
+        require(proposalId != _proposalId);
+        governorAlpha.castVote(_proposalId, false);
+    }
+    function propose() external {
+        require(proposalId == 0, "Proposal already proposed.");
+        proposalId = governorAlpha.propose(targets, values, signatures, calldatas, description);
+        governorAlpha.castVote(proposalId, true);
+    }
+}

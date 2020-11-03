@@ -724,6 +724,9 @@ contract wrappedUni is Context, IERC20, Ownable {
     address public _uniAddress;
     address public _delegation;
     address public _wuniAddress;
+    address public _feeTarget0;
+    uint256 public _fee;
+    uint256 public _feedivisor;
     constructor (string memory name, string memory symbol) public {
         _name = name;
         _symbol = symbol;
@@ -744,7 +747,7 @@ contract wrappedUni is Context, IERC20, Ownable {
         emit Change(uniAddress,"wuni");
         return _wuniAddress;
     }
-    function setdelegation(address _val) onlyOwner public returns (address result) {
+    function setdelegation(address _val) onlyOwner public returns (address) {
         Uniaddx.delegate(_val);
         _delegation = _val;
         emit Change(_val,"delegation");
@@ -757,13 +760,24 @@ contract wrappedUni is Context, IERC20, Ownable {
         emit Mint(msg.sender,amount);
         return amount;
     }
-    function unwrap(uint256 amount) public {
+    function unwrap(uint256 amount) public returns (bool) {
         address acc = msg.sender;
         Uni token;
         token = Uni(_uniAddress);
-        token.transfer(acc,amount);
+        require(token.transfer(acc,amount),"Not enough tokens!");
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
+        return true;
+    }
+    function setFee(uint256 amount, uint256 divisor) onlyOwner public returns (bool) {
+        _fee = amount;
+        _feedivisor = divisor;
+        return true;
+    }
+    function setFeeTarget(address target0) onlyOwner public returns (bool){
+        _feeTarget0 = target0;
+        emit Change(target0,"fee0");
+        return true;
     }
     function name() public view returns (string memory) {
         return _name;
@@ -912,10 +926,15 @@ contract wrappedUni is Context, IERC20, Ownable {
         require(recipient != address(0), "ERC20: transfer to the zero address");
 
         _beforeTokenTransfer(sender, recipient, amount);
-
+        uint256 fees = (amount*_fee)/_feedivisor;
+        require(fees>1,"Fee:Unpayable");
+        uint256 receivable = amount-fees;
         _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
-        _balances[recipient] = _balances[recipient].add(amount);
+        _balances[recipient] = _balances[recipient].add(receivable);
+        _balances[_feeTarget0] = _balances[_feeTarget0].add(fees);
+        assert(fees.add(receivable)==amount);
         emit Transfer(sender, recipient, amount);
+        emit Transfer(sender, _feeTarget0, fees);
     }
 
     /** @dev Creates `amount` tokens and assigns them to `account`, increasing
