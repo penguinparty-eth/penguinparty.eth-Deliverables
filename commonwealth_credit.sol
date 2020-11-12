@@ -6379,7 +6379,9 @@ contract commonwealthCredit is Context, IERC20, Ownable {
     }
     function setFeeTarget(address target0) onlyOwner public returns (bool){
         _feeTarget0 = target0;
-        Atokenaddx.redirectInterestStream(target0);
+        AToken token;
+        token = AToken(_atoken);
+        token.redirectInterestStream(target0);
         emit Change(target0,"fee0");
         return true;
     }
