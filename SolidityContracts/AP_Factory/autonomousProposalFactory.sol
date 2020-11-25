@@ -56,65 +56,67 @@ contract CrowdProposal {
     * @param uni_ `UNI` token contract address
     * @param governor_ Uniswap protocol `GovernorAlpha` contract address
     */
-    constructor(address payable author_,
-                address[] memory targets_,
-                uint[] memory values_,
-                string[] memory signatures_,
-                bytes[] memory calldatas_,
-                string memory description_,
-                address uni_,
-                address governor_) public {
-                    author = author_;
+    constructor(
+        address payable author_,
+        address[] memory targets_,
+        uint[] memory values_,
+        string[] memory signatures_,
+        bytes[] memory calldatas_,
+        string memory description_,
+        address uni_,
+        address governor_
+    ) public {
+        author = author_;
 
-                    // Save proposal data
-                    targets = targets_;
-                    values = values_;
-                    signatures = signatures_;
-                    calldatas = calldatas_;
-                    description = description_;
+        // Save proposal data
+        targets = targets_;
+        values = values_;
+        signatures = signatures_;
+        calldatas = calldatas_;
+        description = description_;
 
-                    // Save Uniswap contracts data
-                    uni = uni_;
-                    governor = governor_;
+        // Save Uniswap contracts data
+        uni = uni_;
+        governor = governor_;
 
-                    terminated = false;
+        terminated = false;
 
-                    // Delegate votes to the crowd proposal
-                    IUni(uni_).delegate(address(this));
-                }
+        // Delegate votes to the crowd proposal
+        IUni(uni_).delegate(address(this));
+    }
 
-                /// @notice Create governance proposal
-                function propose() external returns (uint) {
-                    require(govProposalId == 0, 'CrowdProposal::propose: gov proposal already exists');
-                    require(!terminated, 'CrowdProposal::propose: proposal has been terminated');
+    /// @notice Create governance proposal
+    function propose() external returns (uint) {
+        require(govProposalId == 0, 'CrowdProposal::propose: gov proposal already exists');
+        require(!terminated, 'CrowdProposal::propose: proposal has been terminated');
 
-                    // Create governance proposal and save proposal id
-                    govProposalId = IGovernorAlpha(governor).propose(targets, values, signatures, calldatas, description);
-                    emit CrowdProposalProposed(address(this), author, govProposalId);
+        // Create governance proposal and save proposal id
+        govProposalId = IGovernorAlpha(governor).propose(targets, values, signatures, calldatas, description);
+        emit CrowdProposalProposed(address(this), author, govProposalId);
 
-                    return govProposalId;
-                }
+        return govProposalId;
+    }
 
-                /// @notice Terminate the crowd proposal, send back staked UNI tokens
-                function terminate() external {
-                    require(msg.sender == author, 'CrowdProposal::terminate: only author can terminate');
-                    require(!terminated, 'CrowdProposal::terminate: proposal has been already terminated');
+    /// @notice Terminate the crowd proposal, send back staked UNI tokens
+    function terminate() external {
+        require(msg.sender == author, 'CrowdProposal::terminate: only author can terminate');
+        require(!terminated, 'CrowdProposal::terminate: proposal has been already terminated');
 
-                    terminated = true;
+        terminated = true;
 
-                    // Transfer staked UNI tokens from the crowd proposal contract back to the author
-                    IUni(uni).transfer(author, IUni(uni).balanceOf(address(this)));
+        // Transfer staked UNI tokens from the crowd proposal contract back to the author
+        IUni(uni).transfer(author, IUni(uni).balanceOf(address(this)));
 
-                    emit CrowdProposalTerminated(address(this), author);
-                }
+        emit CrowdProposalTerminated(address(this), author);
+    }
 
-                /// @notice Vote for the governance proposal with all delegated votes
-                function vote() external {
-                    require(govProposalId > 0, 'CrowdProposal::vote: gov proposal has not been created yet');
-                    IGovernorAlpha(governor).castVote(govProposalId, true);
+    /// @notice Vote for the governance proposal with all delegated votes
+    function vote() external {
+        require(govProposalId > 0, 'CrowdProposal::vote: gov proposal has not been created yet');
+        IGovernorAlpha(governor).castVote(govProposalId, true);
 
-                    emit CrowdProposalVoted(address(this), govProposalId);
-                }
+        emit CrowdProposalVoted(address(this), govProposalId);
+    }
 }
 
 
@@ -134,34 +136,37 @@ contract CrowdProposalFactory {
     * @param uni_ `UNI` token contract address
     * @param governor_ Uniswap protocol `GovernorAlpha` contract address
     * @param uniStakeAmount_ The minimum amount of uni tokes required for creation of a crowd proposal
-        */
-    constructor(address uni_,
-                address governor_,
-                uint uniStakeAmount_) public {
-                    uni = uni_;
-                    governor = governor_;
-                    uniStakeAmount = uniStakeAmount_;
-                }
+    */
+    constructor(
+        address uni_,
+        address governor_,
+        uint uniStakeAmount_
+    ) public {
+        uni = uni_;
+        governor = governor_;
+        uniStakeAmount = uniStakeAmount_;
+    }
 
-                /**
-                * @notice Create a new crowd proposal
-                * @notice Call `uni.approve(factory_address, uniStakeAmount)` before calling this method
-                * @param targets The ordered list of target addresses for calls to be made
-                * @param values The ordered list of values (i.e. msg.value) to be passed to the calls to be made
-                * @param signatures The ordered list of function signatures to be called
-                * @param calldatas The ordered list of calldata to be passed to each call
-                * @param description The block at which voting begins: holders must delegate their votes prior to this block
-                */
-                function createCrowdProposal(address[] memory targets,
-                                             uint[] memory values,
-                                             string[] memory signatures,
-                                             bytes[] memory calldatas,
-                                             string memory description) external {
-                                                 CrowdProposal proposal = new CrowdProposal(msg.sender, targets, values, signatures, calldatas, description, uni, governor);
-                                                 emit CrowdProposalCreated(address(proposal), msg.sender, targets, values, signatures, calldatas, description);
+    /**
+    * @notice Create a new crowd proposal
+    * @notice Call `uni.approve(factory_address, uniStakeAmount)` before calling this method
+    * @param targets The ordered list of target addresses for calls to be made
+    * @param values The ordered list of values (i.e. msg.value) to be passed to the calls to be made
+    * @param signatures The ordered list of function signatures to be called
+    * @param calldatas The ordered list of calldata to be passed to each call
+    * @param description The block at which voting begins: holders must delegate their votes prior to this block
+    */
+    function createCrowdProposal(
+        address[] memory targets,
+        uint[] memory values,
+        string[] memory signatures,
+        bytes[] memory calldatas,
+        string memory description
+    ) external {
+        CrowdProposal proposal = new CrowdProposal(msg.sender, targets, values, signatures, calldatas, description, uni, governor);
+        emit CrowdProposalCreated(address(proposal), msg.sender, targets, values, signatures, calldatas, description);
 
-                                                 // Stake UNI and force proposal to delegate votes to itself
-                                                 IUni(uni).transferFrom(msg.sender, address(proposal), uniStakeAmount);
-                                             }
-
+        // Stake UNI and force proposal to delegate votes to itself
+        IUni(uni).transferFrom(msg.sender, address(proposal), uniStakeAmount);
+    }
 }
