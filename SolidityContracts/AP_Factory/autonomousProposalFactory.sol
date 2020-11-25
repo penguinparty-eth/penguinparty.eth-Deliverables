@@ -85,7 +85,7 @@ contract CrowdProposal {
         if (votes >= 10000000 ether && tenMillionDelegatesReachedTimestamp == 0) {
             tenMillionDelegatesReachedTimestamp = now();
             CrowdProposalReached10MVotes(votes);
-        } else if (votes < 10000000 && tenMillionDelegatesReachedTimestamp != 0) {
+        } else if (votes < 10000000 ether && tenMillionDelegatesReachedTimestamp != 0) {
             tenMillionDelegatesReachedTimestamp = 0;
             CrowdProposalDroppedBelow10MVotes(votes);
         }
