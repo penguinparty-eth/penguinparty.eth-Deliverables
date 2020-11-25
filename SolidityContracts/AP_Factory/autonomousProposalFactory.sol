@@ -6,10 +6,8 @@ pragma solidity ^0.6.10;
 pragma experimental ABIEncoderV2;
 
 interface IUni {
+    function getCurrentVotes(address account) external view returns (uint96);
     function delegate(address delegatee) external;
-    function balanceOf(address account) external view returns (uint);
-    function transfer(address dst, uint rawAmount) external returns (bool);
-    function transferFrom(address src, address dst, uint rawAmount) external returns (bool);
 }
 
 interface IGovernorAlpha {
@@ -27,9 +25,13 @@ contract CrowdProposal {
 
     /// @notice Uniswap protocol `GovernorAlpha` contract address
     address public immutable governor;
+    /// @notice Uniswap token contract address
+    address public immutable uni;
 
     /// @notice Governance proposal id
     uint public govProposalId;
+    /// @notice Timestamp when 10,000,000 delegated UNI was first noticed
+    uint256 public tenMillionDelegatesReachedTimestamp;
 
     /// @notice An event emitted when the governance proposal is created
     event CrowdProposalProposed(address indexed proposal, uint proposalId);
@@ -37,6 +39,10 @@ contract CrowdProposal {
     event CrowdProposalVotedYes(address indexed proposal, uint proposalId);
     /// @notice An event emitted when a no vote is cast
     event CrowdProposalVotedNo(address indexed proposal, uint proposalId);
+    /// @notice An event emitted when the proposal notices it reached 10M UNI delegated
+    event CrowdProposalReached10MVotes(uint256 votes);
+    /// @notice An event emitted when the proposal notices it fell below 10M UNI delegated
+    event CrowdProposalDroppedBelow10MVotes(uint256 votes);
 
     /**
     * @notice Construct crowd proposal
@@ -66,15 +72,30 @@ contract CrowdProposal {
 
         // Save Uniswap contracts data
         governor = governor_;
+        uni = uni_;
 
         // Delegate votes to the crowd proposal
         IUni(uni_).delegate(address(this));
+    }
+    
+    /// @notice Causes the contract to notice a change in delegated votes
+    function noticeVotes(
+    ) public {
+        uint96 votes = uni.getCurrentVotes(this);
+        if (votes >= 10000000 ether && tenMillionDelegatesReachedTimestamp == 0) {
+            tenMillionDelegatesReachedTimestamp = now();
+            CrowdProposalReached10MVotes(votes);
+        } else if (votes < 10000000 && tenMillionDelegatesReachedTimestamp != 0) {
+            tenMillionDelegatesReachedTimestamp = 0;
+            CrowdProposalDroppedBelow10MVotes(votes);
+        }
     }
 
     /// @notice Create governance proposal
     function propose(
     ) external returns (uint) {
         require(govProposalId == 0, 'CrowdProposal::propose: gov proposal already exists');
+        require(now() >= tenMillionDelegatesReachedTimestamp + 7 days, 'CrowdProposal::propose: you must wait 7 days after receiving 10M delegates before issuing the proposal');
 
         // Create governance proposal and save proposal id
         govProposalId = IGovernorAlpha(governor).propose(targets, values, signatures, calldatas, description);
