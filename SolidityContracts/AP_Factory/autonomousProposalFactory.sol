@@ -30,8 +30,6 @@ contract CrowdProposal {
 
     /// @notice Governance proposal id
     uint public govProposalId;
-    /// @notice Terminate flag
-    bool public terminated;
 
     /// @notice An event emitted when the governance proposal is created
     event CrowdProposalProposed(address indexed proposal, uint proposalId);
@@ -69,8 +67,6 @@ contract CrowdProposal {
         // Save Uniswap contracts data
         governor = governor_;
 
-        terminated = false;
-
         // Delegate votes to the crowd proposal
         IUni(uni_).delegate(address(this));
     }
@@ -79,7 +75,6 @@ contract CrowdProposal {
     function propose(
     ) external returns (uint) {
         require(govProposalId == 0, 'CrowdProposal::propose: gov proposal already exists');
-        require(!terminated, 'CrowdProposal::propose: proposal has been terminated');
 
         // Create governance proposal and save proposal id
         govProposalId = IGovernorAlpha(governor).propose(targets, values, signatures, calldatas, description);
