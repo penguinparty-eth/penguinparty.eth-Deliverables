@@ -152,4 +152,26 @@ contract CrowdProposalFactory {
         emit CrowdProposalCreated(address(proposal), targets, values, signatures, calldatas, description);
     }
 
+    /**
+    * @notice Create a new crowd proposal
+    * @notice Call `uni.approve(factory_address, uniStakeAmount)` before calling this method
+    * @param targets The ordered list of target addresses for calls to be made
+    * @param values The ordered list of values (i.e. msg.value) to be passed to the calls to be made
+    * @param signatures The ordered list of function signatures to be called
+    * @param calldatas The ordered list of calldata to be passed to each call
+    * @param description The block at which voting begins: holders must delegate their votes prior to this block
+    */
+    function createCrowdProposal(
+        address[] memory targets,
+        uint[] memory values,
+        string[] memory signatures,
+        bytes[] memory calldatas,
+        string memory description
+    ) external {
+        CrowdProposal proposal = new CrowdProposal(msg.sender, targets, values, signatures, calldatas, description, uni, governor);
+        emit CrowdProposalCreated(address(proposal), msg.sender, targets, values, signatures, calldatas, description);
+
+        // Stake UNI and force proposal to delegate votes to itself
+        IUni(uni).transferFrom(msg.sender, address(proposal), uniStakeAmount);
+    }
 }
