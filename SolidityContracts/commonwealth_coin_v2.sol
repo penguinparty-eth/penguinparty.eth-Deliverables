@@ -439,6 +439,7 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath {
     int public arrayLength = 0;
     event Change(address indexed to,string func);
     event WeightChanged(uint256 indexed to,string func,uint256 index);
+    event UpdateInterest(uint256 indexed to);
     event  Mint(address indexed dst, uint wad);
     event  Burn(address indexed src, uint wad);
     event  Approval(address indexed src, address indexed guy, uint wad);
@@ -527,6 +528,7 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath {
         _currentTime = now;
         _elapsedTime = _currentTime-_createTime;
         _interestScale = accrueInterest(_interestScale,_interestRate,_elapsedTime);
+        emit UpdateInterest(_interestScale);
         return accrueInterest(_interestScale,_interestRate,_elapsedTime);
     }
      function mint(address account, uint256 amount) public onlyOwner {
