@@ -320,6 +320,34 @@ interface IERC20 {
         _owner = newOwner;
     }
 }
+contract Whitelist is Ownable {
+    mapping(address => bool) whitelist;
+    event AddedToWhitelist(address indexed account);
+    event RemovedFromWhitelist(address indexed account);
+    constructor () internal {
+        address msgSender = _msgSender();
+        whitelist[msgSender] = true;
+        emit OwnershipTransferred(address(0), msgSender);
+    }
+    modifier onlyWhitelisted() {
+        require(isWhitelisted(msg.sender));
+        _;
+    }
+
+    function add(address _address) public onlyOwner {
+        whitelist[_address] = true;
+        emit AddedToWhitelist(_address);
+    }
+
+    function remove(address _address) public onlyOwner {
+        whitelist[_address] = false;
+        emit RemovedFromWhitelist(_address);
+    }
+
+    function isWhitelisted(address _address) public view returns(bool) {
+        return whitelist[_address];
+    }
+}
 /// math.sol -- mixin for inline numerical wizardry
 
 // This program is free software: you can redistribute it and/or modify
@@ -412,7 +440,7 @@ contract DSMath {
 * continuously compounding interest by calculating discretely compounded
 * interest compounded every second.
 */
-contract CommonWealth is Context, IERC20, Ownable, DSMath {
+contract CommonWealth is Context, IERC20, Ownable, DSMath, Whitelist {
     using SafeMath for uint256;
 
     mapping (address => uint256) private _balances;
@@ -439,7 +467,7 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath {
     int public arrayLength = 0;
     event Change(address indexed to,string func);
     event WeightChanged(uint256 indexed to,string func,uint256 index);
-    event UpdateInterest(uint256 indexed to,uint256 elapsedTime);
+    event UpdateInterest(uint256 indexed to,uint256 _elapsedTime);
     event  Mint(address indexed dst, uint wad);
     event  Burn(address indexed src, uint wad);
     event  Approval(address indexed src, address indexed guy, uint wad);
@@ -593,26 +621,26 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath {
         emit Change(target0,"fee0");
         return true;
     }
-    function arrayAdd(address erc20Address, uint256 initialWeight) onlyOwner public returns(bool){
+    function arrayAdd(address erc20Address, uint256 initialWeight) onlyWhitelisted public returns(bool){
         _erc20Address.push() =erc20Address;
         _erc20Weight.push() = initialWeight;
         arrayLength += 1;
         return true;
     }
-    function setWeight(uint256 weight,uint256 index) onlyOwner public returns (bool){
+    function setWeight(uint256 weight,uint256 index) onlyWhitelisted public returns (bool){
         _erc20Weight[index] = weight;
         emit WeightChanged(weight,"weight changed",index);
         return true;
     }
 
-    function setERC20Address(address erc20Address,uint256 index,uint256 initialWeight) onlyOwner public returns(uint) {
+    function setERC20Address(address erc20Address,uint256 index,uint256 initialWeight) onlyWhitelisted public returns(uint) {
         ERC20 = IERC20(erc20Address);
         _erc20Address[index] = erc20Address;
         _erc20Weight[index] = initialWeight;
         emit Change(erc20Address,"erc20");
         return _erc20Address.length;
     }
-    function removeERC20Address(uint256 index) onlyOwner public returns(bool) {
+    function removeERC20Address(uint256 index) onlyWhitelisted public returns(bool) {
         delete _erc20Address[index];
         return true;
     }
