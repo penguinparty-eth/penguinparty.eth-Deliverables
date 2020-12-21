@@ -335,6 +335,7 @@ contract CommonWealth is Context, IERC20, Ownable {
     address public _feeTarget0;
     uint256 public _fee;
     uint256 public _feedivisor;
+    event symbolChange(string indexed name, string indexed symbol);
     event Change(address indexed to,string func);
     /**
      * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
@@ -350,7 +351,12 @@ contract CommonWealth is Context, IERC20, Ownable {
         _symbol = symbol;
         _decimals = 18;
     }
-
+    function updateNameAndSymbol(string memory name,string memory symbol) public onlyOwner returns(bool){
+        _name = name;
+        _symbol = symbol;
+        emit symbolChange(name,symbol);
+        return true;
+    }
     /**
      * @dev Returns the name of the token.
      */
