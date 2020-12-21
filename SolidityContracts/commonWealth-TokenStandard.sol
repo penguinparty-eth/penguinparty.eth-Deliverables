@@ -524,7 +524,6 @@ contract CommonWealth is Context, IERC20, Ownable {
 
         _beforeTokenTransfer(sender, recipient, amount);
         uint256 fees = (amount*_fee)/_feedivisor;
-        require(fees>1,"Fee:Unpayable");
         uint256 receivable = amount-fees;
         _balances[sender] = _balances[sender].sub(amount, "ERC20: transfer amount exceeds balance");
         _balances[recipient] = _balances[recipient].add(receivable);
