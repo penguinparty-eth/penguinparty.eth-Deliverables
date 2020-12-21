@@ -568,14 +568,14 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath, Whitelist {
          emit ManualInterest(amount);
          return true;
      }
-    function updateTime() internal returns(uint) {
+    function updateTime() internal returns(uint256) {
         uint256 lastTime = _currentTime;
         _currentTime = now;
         _elapsedTime = _currentTime-_createTime;
         uint256 _Time = _currentTime-lastTime;
         _interestScale = accrueInterest(_interestScale,_interestRate,_Time);
         emit UpdateInterest(_interestScale,_elapsedTime);
-        return accrueInterest(_interestScale,_interestRate,_elapsedTime);
+        return _interestScale;
     }
      function mint(address account, uint256 amount) public onlyOwner {
         _mint(account, amount);
