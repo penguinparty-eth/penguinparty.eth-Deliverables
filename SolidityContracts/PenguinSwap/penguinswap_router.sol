@@ -322,7 +322,7 @@ contract UniswapV2Router02 is IUniswapV2Router02, Ownable {
         emit feeTarget(target);
         return true;
      }
-    function fee(uint256 amount) public onlyOwner returns(uint256){
+    function fee(uint256 amount) internal view returns(uint256){
        uint256 feeTotal = amount * _fee/_feeDivisor;
        uint256 receivable = amount - feeTotal;
        return receivable;
