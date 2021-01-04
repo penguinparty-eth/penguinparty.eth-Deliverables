@@ -331,7 +331,7 @@ contract CommonWealth is Context, IERC20, Ownable {
     uint256 public _time;
     string private _name;
     string private _symbol;
-    uint8 private _decimals;
+    uint8 public _decimals;
     address public _feeTarget0;
     uint256 public _fee;
     uint256 public _feedivisor;
