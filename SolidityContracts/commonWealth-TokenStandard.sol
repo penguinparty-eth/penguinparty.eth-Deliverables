@@ -331,7 +331,7 @@ contract CommonWealth is Context, IERC20, Ownable {
     uint256 public _time;
     string private _name;
     string private _symbol;
-    uint8 private _decimals;
+    uint8 public _decimals;
     address public _feeTarget0;
     uint256 public _fee;
     uint256 public _feedivisor;
@@ -346,7 +346,7 @@ contract CommonWealth is Context, IERC20, Ownable {
      * All three of these values are immutable: they can only be set once during
      * construction.
      */
-    constructor (string memory name, string memory symbol, uint8 memory decimals) public {
+    constructor (string memory name, string memory symbol, uint8 decimals) public {
         _name = name;
         _symbol = symbol;
         _decimals = decimals;

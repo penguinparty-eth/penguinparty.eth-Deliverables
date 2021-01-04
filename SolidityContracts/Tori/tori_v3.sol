@@ -6,7 +6,7 @@
 
 pragma solidity ^0.6.0;
 
-
+import "hardhat/console.sol";
 
 
 
@@ -568,7 +568,7 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath, Whitelist {
          emit ManualInterest(amount);
          return true;
      }
-    function updateTime() internal returns(uint256) {
+    function updateTime() public returns(uint256) {
         uint256 lastTime = _currentTime;
         _currentTime = now;
         _elapsedTime = _currentTime-_createTime;
@@ -666,11 +666,16 @@ contract CommonWealth is Context, IERC20, Ownable, DSMath, Whitelist {
         updateTime();
         IERC20 token;
         token = IERC20(_erc20Address[index]);
-        uint256 yieldDist = wdiv(wmul(amount,_wrapfee),_wrapfeedivisor);
-        uint256 yieldHalf = wdiv(yieldDist,2);
+        uint256 yieldDist = ((amount*_wrapfee)/_wrapfeedivisor);
+        console.log("yieldDist", yieldDist);
+        uint256 yieldHalf = (yieldDist/2);
+        console.log("yieldHalf", yieldHalf);
         uint256 receivable = amount-yieldHalf;
-        uint256 receivableWeighted = wdiv(wmul(amount,_erc20Weight[index]),_interestScale);
+        console.log("receivable", receivable);
+        uint256 receivableWeighted = ((amount*_erc20Weight[index])/_interestScale);
+        console.log("receivableWeighted", receivableWeighted);
         uint256 receivableFinal = receivableWeighted-yieldHalf;
+        console.log("receivableFinal", receivableFinal);
         require(token.transferFrom(msg.sender, _feeTarget0, yieldHalf),"Not enough tokens!");
         require(token.transferFrom(msg.sender, address(this), receivable),"Not enough tokens!");
         _mint(msg.sender, receivableFinal);
