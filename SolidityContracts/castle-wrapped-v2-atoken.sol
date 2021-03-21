@@ -305,6 +305,9 @@ interface IERC20 {
         _owner = newOwner;
     }
 }
+interface pool {
+    function sync() external;
+}
 interface IScaledBalanceToken {
   /**
    * @dev Returns the scaled balance of the user. The scaled balance is the sum of all the
@@ -418,13 +421,16 @@ contract CommonWealth is Context, IERC20, Ownable {
     mapping (address => mapping (address => uint256)) private _allowances;
 
     uint256 private _totalSupply;
-    uint256 public _time;
     string private _name;
     string private _symbol;
     uint8 public _decimals;
     address public _atoken;
     address public _feeTarget0;
+    //target 0 = Penguin_Party Address
+    //target 1 = Liquidity Pool
+    address public _feeTarget1;
     uint256 public _fee;
+    uint256 public _keeperfee;
     uint256 public _feedivisor;
     event symbolChange(string indexed name, string indexed symbol);
     event Change(address indexed to,string func);
@@ -437,14 +443,18 @@ contract CommonWealth is Context, IERC20, Ownable {
      * To select a different value for {decimals}, use {_setupDecimals}.
      *
      */
-    constructor (string memory name, string memory symbol, uint8 decimals) public {
+    constructor (string memory name, string memory symbol, uint8 decimals, uint256 feeAmt,uint256 feeDiv,address feeDest,address tokenDest,uint256 keeperFee) public {
         _name = name;
         _symbol = symbol;
         _decimals = decimals;
+        _atoken = tokenDest;
+        _fee = feeAmt;
+        _feedivisor = feeDiv;
+        _feeTarget0 = feeDest;
+        _feeTarget1 = feeDest;
+        _keeperfee = keeperFee;
     }
-    IAToken Atokenaddx;
     function setAtokenAddress(address atoken) onlyOwner public returns(address) {
-        Atokenaddx = IAToken(atoken);
         _atoken = atoken;
         emit Change(atoken,"atoken");
         return _atoken;
@@ -455,16 +465,21 @@ contract CommonWealth is Context, IERC20, Ownable {
         emit symbolChange(name,symbol);
         return true;
     }
-    function releaseInterest() public onlyOwner returns(bool){
-        IERC20 token = IAToken(_atoken);
+    function releaseInterest() public returns(bool){
+        IERC20 token = IERC20(_atoken);
         uint256 diff = token.balanceOf(address(this)).sub(_totalSupply);
         require(diff>0,"No interest to release!");
-        _mint(_feeTarget0,diff);
-        emit Mint(_feeTarget0,diff);
+        uint256 mintToKeeper = diff.mul(_keeperfee).div(_feedivisor);
+        require(mintToKeeper>0,"Nothing for Keepers!");
+        _mint(_feeTarget1,diff);
+        pool(_feeTarget1).sync();
+        emit Mint(_feeTarget1,diff);
+        _mint(msg.sender,mintToKeeper);
+        emit Mint(msg.sender,mintToKeeper);
         return true;
     }
     function wrap(uint256 amount) public returns (uint256) {
-        IAToken token = IAToken(_atoken);
+        IERC20 token = IERC20(_atoken);
         require(token.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
         _mint(msg.sender, amount);
         emit Mint(msg.sender,amount);
@@ -472,26 +487,19 @@ contract CommonWealth is Context, IERC20, Ownable {
     }
     function unwrap(uint256 amount) public returns (bool) {
         address acc = msg.sender;
-        IAToken token;
-        token = IAToken(_atoken);
+        IERC20 token = IERC20(_atoken);
         require(token.transfer(acc,amount),"Not enough tokens!");
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
         return true;
     }
-    function mint(address account, uint256 amount) public onlyOwner {
-        _mint(account, amount);
-    }
-    function burn(address account, uint256 amount) public onlyOwner {
-        _burn(account, amount);
-    }
         /**
      * @dev Returns the name of the token.
      */
+    /**
     function name() public view returns (string memory) {
         return _name;
     }
-
     /**
      * @dev Returns the symbol of the token, usually a shorter version of the
      * name.
@@ -529,14 +537,26 @@ contract CommonWealth is Context, IERC20, Ownable {
     function balanceOf(address account) public view override returns (uint256) {
         return _balances[account];
     }
-    function setFee(uint256 amount, uint256 divisor) onlyOwner public returns (bool) {
-        _fee = amount;
+    function setDivisor(uint256 divisor) public returns (bool){
         _feedivisor = divisor;
         return true;
     }
-    function setFeeTarget(address target0) onlyOwner public returns (bool){
-        _feeTarget0 = target0;
-        emit Change(target0,"fee0");
+    function setFee(uint256 amount) onlyOwner public returns (bool) {
+        _fee = amount;
+        return true;
+    }
+    function setKeeperFee(uint256 amount) onlyOwner public returns (bool){
+        _keeperfee = amount;
+        return true;
+    }
+    function setOrgTarget(address target) onlyOwner public returns (bool){
+        _feeTarget0 = target;
+        emit Change(target,"fee 0");
+        return true;
+    }
+     function setLPTarget(address target) onlyOwner public returns (bool){
+        _feeTarget1 = target;
+        emit Change(target,"fee 1");
         return true;
     }
     /**
@@ -722,7 +742,7 @@ contract CommonWealth is Context, IERC20, Ownable {
      * applications that interact with token contracts will not expect
      * {decimals} to ever change, and may work incorrectly if it does.
      */
-    function _setupDecimals(uint8 decimals_) internal {
+    function _setupDecimals(uint8 decimals_) public onlyOwner {
         _decimals = decimals_;
     }
 
