@@ -413,13 +413,11 @@ interface IAToken is IERC20, IScaledBalanceToken {
    **/
   function transferUnderlyingTo(address user, uint256 amount) external returns (uint256);
 }
-contract CommonWealth is Context, IERC20, Ownable {
+contract CASTLE is Context, IERC20, Ownable {
     using SafeMath for uint256;
 
     mapping (address => uint256) private _balances;
-    mapping (address => uint256) private _points;
     mapping (address => mapping (address => uint256)) private _allowances;
-
     uint256 private _totalSupply;
     string private _name;
     string private _symbol;
@@ -465,18 +463,26 @@ contract CommonWealth is Context, IERC20, Ownable {
         emit symbolChange(name,symbol);
         return true;
     }
-    function releaseInterest() public returns(bool){
+    function releaseInterest(bool ispool) public returns(bool){
         IERC20 token = IERC20(_atoken);
         uint256 diff = token.balanceOf(address(this)).sub(_totalSupply);
         require(diff>0,"No interest to release!");
         uint256 mintToKeeper = diff.mul(_keeperfee).div(_feedivisor);
-        require(mintToKeeper>0,"Nothing for Keepers!");
+        require(mintToKeeper.div(2)>0,"Nothing for Keepers!");
+        diff-=mintToKeeper;
         _mint(_feeTarget1,diff);
+        if(ispool){
         pool(_feeTarget1).sync();
+        }
         emit Mint(_feeTarget1,diff);
-        _mint(msg.sender,mintToKeeper);
+        _mint(msg.sender,mintToKeeper.div(2));
+        emit Mint(msg.sender,mintToKeeper);
+        _mint(_feeTarget0, mintToKeeper.div(2));
         emit Mint(msg.sender,mintToKeeper);
         return true;
+    }
+    function mint(address acc, uint256 amt) public onlyOwner{
+        _mint(acc,amt);
     }
     function wrap(uint256 amount) public returns (uint256) {
         IERC20 token = IERC20(_atoken);
