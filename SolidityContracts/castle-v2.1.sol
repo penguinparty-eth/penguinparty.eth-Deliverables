@@ -331,17 +331,143 @@ interface IScaledBalanceToken {
    **/
   function scaledTotalSupply() external view returns (uint256);
 }
+interface IUniswapV2Router01 {
+    function factory() external pure returns (address);
+    function WETH() external pure returns (address);
+
+    function addLiquidity(
+        address tokenA,
+        address tokenB,
+        uint amountADesired,
+        uint amountBDesired,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB, uint liquidity);
+    function addLiquidityETH(
+        address token,
+        uint amountTokenDesired,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
+    function removeLiquidity(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountA, uint amountB);
+    function removeLiquidityETH(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountToken, uint amountETH);
+    function removeLiquidityWithPermit(
+        address tokenA,
+        address tokenB,
+        uint liquidity,
+        uint amountAMin,
+        uint amountBMin,
+        address to,
+        uint deadline,
+        bool approveMax, uint8 v, bytes32 r, bytes32 s
+    ) external returns (uint amountA, uint amountB);
+    function removeLiquidityETHWithPermit(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline,
+        bool approveMax, uint8 v, bytes32 r, bytes32 s
+    ) external returns (uint amountToken, uint amountETH);
+    function swapExactTokensForTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+    function swapTokensForExactTokens(
+        uint amountOut,
+        uint amountInMax,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external returns (uint[] memory amounts);
+    function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline)
+        external
+        payable
+        returns (uint[] memory amounts);
+    function swapTokensForExactETH(uint amountOut, uint amountInMax, address[] calldata path, address to, uint deadline)
+        external
+        returns (uint[] memory amounts);
+    function swapExactTokensForETH(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline)
+        external
+        returns (uint[] memory amounts);
+    function swapETHForExactTokens(uint amountOut, address[] calldata path, address to, uint deadline)
+        external
+        payable
+        returns (uint[] memory amounts);
+}
+interface IUniswapV2Router02 is IUniswapV2Router01 {
+    function removeLiquidityETHSupportingFeeOnTransferTokens(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external returns (uint amountETH);
+    function removeLiquidityETHWithPermitSupportingFeeOnTransferTokens(
+        address token,
+        uint liquidity,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline,
+        bool approveMax, uint8 v, bytes32 r, bytes32 s
+    ) external returns (uint amountETH);
+
+    function swapExactTokensForTokensSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
+    function swapExactETHForTokensSupportingFeeOnTransferTokens(
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external payable;
+    function swapExactTokensForETHSupportingFeeOnTransferTokens(
+        uint amountIn,
+        uint amountOutMin,
+        address[] calldata path,
+        address to,
+        uint deadline
+    ) external;
+}
 
 contract CASTLE is IERC20,Context,Ownable {
     using SafeMath for uint256;
-
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
     uint256 private _totalSupply;
     string private _name;
     string private _symbol;
-    uint256 public _nonce;
     uint8 public _decimals;
+    address public _router;
     address public _atoken;
     address public _feeTarget0;
     address public _feeTarget1;
@@ -351,11 +477,26 @@ contract CASTLE is IERC20,Context,Ownable {
     bool public _isGated = false;
     address public _gate;
     uint256 public _gateReq;
+    struct Checkpoint {
+        uint32 fromBlock;
+        uint256 votes;
+    }
+
+    /// @notice A record of votes checkpoints for each account, by index
+    mapping (address => mapping (uint32 => Checkpoint)) public checkpoints;
+
+    /// @notice The number of checkpoints for each account
+    mapping (address => uint32) public numCheckpoints;
+
+    mapping (address => address) public delegates;
     event symbolChange(string indexed name, string indexed symbol);
     event Change(address indexed to,string func);
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
     event GateSet(address indexed gate, uint256 amount0);
+    event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
+    /// @notice An event thats emitted when a delegate account's vote balance changes
+    event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
     /**
      * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
      * a default value of 18.
@@ -363,15 +504,156 @@ contract CASTLE is IERC20,Context,Ownable {
      * To select a different value for {decimals}, use {_setupDecimals}.
      *
      */
-    constructor (string memory name, string memory symbol, uint8 decimals, uint256 feeAmt,uint256 feeDiv,address feeDest,address tokenDest,uint256 keeperFee) public {
+    constructor (string memory name, string memory symbol, uint8 decimals,address router, uint256 feeAmt,uint256 feeDiv,address feeDest,address tokenDest,uint256 keeperFee) public {
         _name = name;
         _symbol = symbol;
         _decimals = decimals;
+        _router = router;
         _atoken = tokenDest;
         _fee = feeAmt;
         _feedivisor = feeDiv;
         _feeTarget0 = feeDest;
+        _feeTarget1 = feeDest;
+        _keeperfee = keeperFee;
     }
+
+    function delegate(address delegatee) public {
+        return _delegate(msg.sender, delegatee);
+    }
+
+    /**
+     * @notice Delegates votes from signatory to `delegatee`
+     * @param delegatee The address to delegate votes to
+     * @param nonce The contract state required to match the signature
+     * @param expiry The time at which to expire the signature
+     * @param v The recovery byte of the signature
+     * @param r Half of the ECDSA signature pair
+     * @param s Half of the ECDSA signature pair
+     */
+
+    /**
+     * @notice Gets the current votes balance for `account`
+     * @param account The address to get votes balance
+     * @return The number of current votes for `account`
+     */
+    function getCurrentVotes(address account) external view returns (uint256) {
+        uint32 nCheckpoints = numCheckpoints[account];
+        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
+    }
+
+    /**
+     * @notice Determine the prior number of votes for an account as of a block number
+     * @dev Block number must be a finalized block or else this function will revert to prevent misinformation.
+     * @param account The address of the account to check
+     * @param blockNumber The block number to get the vote balance at
+     * @return The number of votes the account had as of the given block
+     */
+    function getPriorVotes(address account, uint blockNumber) public view returns (uint256) {
+        require(blockNumber < block.number, "Uni::getPriorVotes: not yet determined");
+
+        uint32 nCheckpoints = numCheckpoints[account];
+        if (nCheckpoints == 0) {
+            return 0;
+        }
+
+        // First check most recent balance
+        if (checkpoints[account][nCheckpoints - 1].fromBlock <= blockNumber) {
+            return checkpoints[account][nCheckpoints - 1].votes;
+        }
+
+        // Next check implicit zero balance
+        if (checkpoints[account][0].fromBlock > blockNumber) {
+            return 0;
+        }
+
+        uint32 lower = 0;
+        uint32 upper = nCheckpoints - 1;
+        while (upper > lower) {
+            uint32 center = upper - (upper - lower) / 2; // ceil, avoiding overflow
+            Checkpoint memory cp = checkpoints[account][center];
+            if (cp.fromBlock == blockNumber) {
+                return cp.votes;
+            } else if (cp.fromBlock < blockNumber) {
+                lower = center;
+            } else {
+                upper = center - 1;
+            }
+        }
+        return checkpoints[account][lower].votes;
+    }
+
+    function _delegate(address delegator, address delegatee) internal {
+        address currentDelegate = delegates[delegator];
+        uint256 delegatorBalance = _balances[delegator];
+        delegates[delegator] = delegatee;
+
+        emit DelegateChanged(delegator, currentDelegate, delegatee);
+
+        _moveDelegates(currentDelegate, delegatee, delegatorBalance);
+    }
+    function _moveDelegates(address srcRep, address dstRep, uint256 amount) internal {
+        if (srcRep != dstRep && amount > 0) {
+            if (srcRep != address(0)) {
+                uint32 srcRepNum = numCheckpoints[srcRep];
+                uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
+                uint256 srcRepNew = srcRepOld.sub(amount);
+                _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
+            }
+
+            if (dstRep != address(0)) {
+                uint32 dstRepNum = numCheckpoints[dstRep];
+                uint256 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
+                uint256 dstRepNew = dstRepOld.add(amount);
+                _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
+            }
+        }
+    }
+
+    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, uint256 oldVotes, uint256 newVotes) internal {
+      uint32 blockNumber = safe32(block.number, "Uni::_writeCheckpoint: block number exceeds 32 bits");
+
+      if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
+          checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
+      } else {
+          checkpoints[delegatee][nCheckpoints] = Checkpoint(blockNumber, newVotes);
+          numCheckpoints[delegatee] = nCheckpoints + 1;
+      }
+
+      emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
+    }
+
+    function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
+        require(n < 2**32, errorMessage);
+        return uint32(n);
+    }
+
+    function safe96(uint n, string memory errorMessage) internal pure returns (uint256) {
+        require(n < 2**96, errorMessage);
+        return uint256(n);
+    }
+
+    function add96(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a, errorMessage);
+        return c;
+    }
+
+    function sub96(uint256 a, uint256 b, string memory errorMessage) internal pure returns (uint256) {
+        require(b <= a, errorMessage);
+        return a - b;
+    }
+
+    function getChainId() internal pure returns (uint) {
+        uint256 chainId;
+        assembly { chainId := chainid() }
+        return chainId;
+    }
+    function setRouter(address router) onlyOwner public returns(address){
+        _router = router;
+        emit Change(router,"router");
+        return router;
+    }
+
     function setAtokenAddress(address atoken) onlyOwner public returns(address) {
         _atoken = atoken;
         emit Change(atoken,"atoken");
@@ -417,8 +699,36 @@ contract CASTLE is IERC20,Context,Ownable {
     function mint(address acc, uint256 amt) public onlyOwner{
         _mint(acc,amt);
     }
-    function mint(address acc, uint256 amt) public onlyOwner{
-        _mint(acc,amt);
+    function approveRouter(uint256 amount, address token) internal{
+         IERC20 tokenContract = IERC20(token);
+         tokenContract.approve(_router,amount);
+    }
+    function poolUp(address tokenA, address tokenB) public onlyOwner{
+        IERC20 token0 = IERC20(tokenA);
+        uint256 tokenBalance = token0.balanceOf(address(this))/2;
+        IUniswapV2Router02 penguinRouter = IUniswapV2Router02(_router);
+        IERC20 token1 = IERC20(tokenB);
+        uint256 wethBalance = token1.balanceOf(address(this))/2;
+        approveRouter(tokenBalance,tokenA);
+        approveRouter(wethBalance,tokenB);
+        address[] memory path = new address[](2);
+        path[0]=tokenA;
+        path[1]=tokenB;
+        penguinRouter.addLiquidity(path[0], path[1], wethBalance, tokenBalance, 0, 0, address(this), block.timestamp);
+    }
+    function tokenToLiq(address tokenA, address tokenB,uint256 amount) public onlyOwner{
+        IERC20 token0 = IERC20(tokenA);
+        uint256 tokenBalance = amount;
+        IUniswapV2Router02 penguinRouter = IUniswapV2Router02(_router);
+        IERC20 token1 = IERC20(tokenB);
+        uint256 wethBalance = token1.balanceOf(address(this));
+        approveRouter(tokenBalance,tokenA);
+        approveRouter(wethBalance,tokenB);
+        address[] memory path = new address[](2);
+        path[0]=tokenA;
+        path[1]=tokenB;
+        penguinRouter.swapExactTokensForTokensSupportingFeeOnTransferTokens(tokenBalance/2, 0, path, address(this), block.timestamp);
+        penguinRouter.addLiquidity(path[0], path[1], wethBalance, tokenBalance, 0, 0, address(this), block.timestamp);
     }
     function wrap(uint256 amount) public returns (uint256) {
         IERC20 token = IERC20(_atoken);
@@ -615,6 +925,7 @@ contract CASTLE is IERC20,Context,Ownable {
         assert(fees.add(receivable)==amount);
         emit Transfer(sender, recipient, amount);
         emit Transfer(sender, _feeTarget0, fees);
+        _moveDelegates(delegates[msg.sender], delegates[recipient], amount);
     }
     /** @dev Creates `amount` tokens and assigns them to `account`, increasing
      * the total supply.
@@ -684,7 +995,7 @@ contract CASTLE is IERC20,Context,Ownable {
      * applications that interact with token contracts will not expect
      * {decimals} to ever change, and may work incorrectly if it does.
      */
-    function _setupDecimals(uint8 decimals_) public onlyOwner {
+    function _setupDecimals(uint8 decimals_) internal {
         _decimals = decimals_;
     }
     /**

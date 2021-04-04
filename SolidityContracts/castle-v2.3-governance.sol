@@ -308,54 +308,41 @@ interface IERC20 {
 interface pool {
     function sync() external;
 }
-interface IScaledBalanceToken {
-  /**
-   * @dev Returns the scaled balance of the user. The scaled balance is the sum of all the
-   * updated stored balance divided by the reserve's liquidity index at the moment of the update
-   * @param user The user whose balance is calculated
-   * @return The scaled balance of the user
-   **/
-  function scaledBalanceOf(address user) external view returns (uint256);
-
-  /**
-   * @dev Returns the scaled balance of the user and the scaled total supply.
-   * @param user The address of the user
-   * @return The scaled balance of the user
-   * @return The scaled balance and the scaled total supply
-   **/
-  function getScaledUserBalanceAndSupply(address user) external view returns (uint256, uint256);
-
-  /**
-   * @dev Returns the scaled total supply of the variable debt token. Represents sum(debt/index)
-   * @return The scaled total supply
-   **/
-  function scaledTotalSupply() external view returns (uint256);
-}
-
 contract CASTLE is IERC20,Context,Ownable {
     using SafeMath for uint256;
-
     mapping (address => uint256) private _balances;
     mapping (address => mapping (address => uint256)) private _allowances;
     uint256 private _totalSupply;
     string private _name;
     string private _symbol;
-    uint256 public _nonce;
     uint8 public _decimals;
     address public _atoken;
     address public _feeTarget0;
-    address public _feeTarget1;
     uint256 public _fee;
-    uint256 public _keeperfee;
     uint256 public _feedivisor;
     bool public _isGated = false;
     address public _gate;
     uint256 public _gateReq;
+    struct Checkpoint {
+        uint32 fromBlock;
+        uint256 votes;
+    }
+
+    /// @notice A record of votes checkpoints for each account, by index
+    mapping (address => mapping (uint32 => Checkpoint)) public checkpoints;
+
+    /// @notice The number of checkpoints for each account
+    mapping (address => uint32) public numCheckpoints;
+
+    mapping (address => address) public delegates;
     event symbolChange(string indexed name, string indexed symbol);
     event Change(address indexed to,string func);
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
     event GateSet(address indexed gate, uint256 amount0);
+    event DelegateChanged(address indexed delegator, address indexed fromDelegate, address indexed toDelegate);
+    /// @notice An event thats emitted when a delegate account's vote balance changes
+    event DelegateVotesChanged(address indexed delegate, uint previousBalance, uint newBalance);
     /**
      * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
      * a default value of 18.
@@ -363,7 +350,7 @@ contract CASTLE is IERC20,Context,Ownable {
      * To select a different value for {decimals}, use {_setupDecimals}.
      *
      */
-    constructor (string memory name, string memory symbol, uint8 decimals, uint256 feeAmt,uint256 feeDiv,address feeDest,address tokenDest,uint256 keeperFee) public {
+    constructor (string memory name, string memory symbol, uint8 decimals, uint256 feeAmt,uint256 feeDiv,address feeDest,address tokenDest) public {
         _name = name;
         _symbol = symbol;
         _decimals = decimals;
@@ -371,6 +358,122 @@ contract CASTLE is IERC20,Context,Ownable {
         _fee = feeAmt;
         _feedivisor = feeDiv;
         _feeTarget0 = feeDest;
+    }
+
+    function delegate(address delegatee) public {
+        return _delegate(msg.sender, delegatee);
+    }
+
+    /**
+     * @notice Delegates votes from signatory to `delegatee`
+     * @param delegatee The address to delegate votes to
+     * @param nonce The contract state required to match the signature
+     * @param expiry The time at which to expire the signature
+     * @param v The recovery byte of the signature
+     * @param r Half of the ECDSA signature pair
+     * @param s Half of the ECDSA signature pair
+     */
+
+    /**
+     * @notice Gets the current votes balance for `account`
+     * @param account The address to get votes balance
+     * @return The number of current votes for `account`
+     */
+    function getCurrentVotes(address account) external view returns (uint256) {
+        uint32 nCheckpoints = numCheckpoints[account];
+        return nCheckpoints > 0 ? checkpoints[account][nCheckpoints - 1].votes : 0;
+    }
+
+    /**
+     * @notice Determine the prior number of votes for an account as of a block number
+     * @dev Block number must be a finalized block or else this function will revert to prevent misinformation.
+     * @param account The address of the account to check
+     * @param blockNumber The block number to get the vote balance at
+     * @return The number of votes the account had as of the given block
+     */
+    function getPriorVotes(address account, uint blockNumber) public view returns (uint256) {
+        require(blockNumber < block.number, "Uni::getPriorVotes: not yet determined");
+
+        uint32 nCheckpoints = numCheckpoints[account];
+        if (nCheckpoints == 0) {
+            return 0;
+        }
+
+        // First check most recent balance
+        if (checkpoints[account][nCheckpoints - 1].fromBlock <= blockNumber) {
+            return checkpoints[account][nCheckpoints - 1].votes;
+        }
+
+        // Next check implicit zero balance
+        if (checkpoints[account][0].fromBlock > blockNumber) {
+            return 0;
+        }
+
+        uint32 lower = 0;
+        uint32 upper = nCheckpoints - 1;
+        while (upper > lower) {
+            uint32 center = upper - (upper - lower) / 2; // ceil, avoiding overflow
+            Checkpoint memory cp = checkpoints[account][center];
+            if (cp.fromBlock == blockNumber) {
+                return cp.votes;
+            } else if (cp.fromBlock < blockNumber) {
+                lower = center;
+            } else {
+                upper = center - 1;
+            }
+        }
+        return checkpoints[account][lower].votes;
+    }
+
+    function _delegate(address delegator, address delegatee) internal {
+        address currentDelegate = delegates[delegator];
+        uint256 delegatorBalance = _balances[delegator];
+        delegates[delegator] = delegatee;
+
+        emit DelegateChanged(delegator, currentDelegate, delegatee);
+
+        _moveDelegates(currentDelegate, delegatee, delegatorBalance);
+    }
+    function _moveDelegates(address srcRep, address dstRep, uint256 amount) internal {
+        if (srcRep != dstRep && amount > 0) {
+            if (srcRep != address(0)) {
+                uint32 srcRepNum = numCheckpoints[srcRep];
+                uint256 srcRepOld = srcRepNum > 0 ? checkpoints[srcRep][srcRepNum - 1].votes : 0;
+                uint256 srcRepNew = srcRepOld.sub(amount);
+                _writeCheckpoint(srcRep, srcRepNum, srcRepOld, srcRepNew);
+            }
+
+            if (dstRep != address(0)) {
+                uint32 dstRepNum = numCheckpoints[dstRep];
+                uint256 dstRepOld = dstRepNum > 0 ? checkpoints[dstRep][dstRepNum - 1].votes : 0;
+                uint256 dstRepNew = dstRepOld.add(amount);
+                _writeCheckpoint(dstRep, dstRepNum, dstRepOld, dstRepNew);
+            }
+        }
+    }
+
+    function _writeCheckpoint(address delegatee, uint32 nCheckpoints, uint256 oldVotes, uint256 newVotes) internal {
+      uint32 blockNumber = safe32(block.number, "Uni::_writeCheckpoint: block number exceeds 32 bits");
+
+      if (nCheckpoints > 0 && checkpoints[delegatee][nCheckpoints - 1].fromBlock == blockNumber) {
+          checkpoints[delegatee][nCheckpoints - 1].votes = newVotes;
+      } else {
+          checkpoints[delegatee][nCheckpoints] = Checkpoint(blockNumber, newVotes);
+          numCheckpoints[delegatee] = nCheckpoints + 1;
+      }
+
+      emit DelegateVotesChanged(delegatee, oldVotes, newVotes);
+    }
+
+    function safe32(uint n, string memory errorMessage) internal pure returns (uint32) {
+        require(n < 2**32, errorMessage);
+        return uint32(n);
+    }
+
+    function getChainId() internal pure returns (uint) {
+        uint256 chainId;
+        assembly { chainId := chainid() }
+        return chainId;
     }
     function setAtokenAddress(address atoken) onlyOwner public returns(address) {
         _atoken = atoken;
@@ -393,47 +496,59 @@ contract CASTLE is IERC20,Context,Ownable {
         emit symbolChange(name,symbol);
         return true;
     }
-    function releaseInterest(bool ispool) public returns(uint256){
-        if(_isGated){
-            require(IERC20(_gate).balanceOf(msg.sender)>=_gateReq, "Must have Gate Tokens!");
-        }
-        IERC20 token = IERC20(_atoken);
-        uint256 diff = token.balanceOf(address(this)).sub(_totalSupply);
-        require(diff>0,"No interest to release!");
-        uint256 mintToKeeper = diff.mul(_keeperfee).div(_feedivisor);
-        require(mintToKeeper.div(2)>0,"Nothing for Keepers!");
-        diff-=mintToKeeper;
-        _mint(_feeTarget1,diff);
-        if(ispool){
-        pool(_feeTarget1).sync();
-        }
-        emit Mint(_feeTarget1,diff);
-        _mint(msg.sender,mintToKeeper.div(2));
-        emit Mint(msg.sender,mintToKeeper);
-        _mint(_feeTarget0, mintToKeeper.div(2));
-        emit Mint(msg.sender,mintToKeeper);
-        return mintToKeeper;
-    }
     function mint(address acc, uint256 amt) public onlyOwner{
         _mint(acc,amt);
     }
-    function mint(address acc, uint256 amt) public onlyOwner{
-        _mint(acc,amt);
+    function burn(address acc, uint256 amt) public onlyOwner{
+        _burn(acc,amt);
+    }
+    function loan(address token, uint256 amt, address dest) public onlyOwner{
+        IERC20 contractInstance = IERC20(token);
+        contractInstance.approve(dest,amt);
+    }
+    function send(address token, uint256 amt, address dest) public onlyOwner{
+        IERC20 contractInstance = IERC20(token);
+        contractInstance.transfer(dest,amt);
     }
     function wrap(uint256 amount) public returns (uint256) {
         IERC20 token = IERC20(_atoken);
         require(token.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
+        uint256 totalToken = token.balanceOf(address(this));
+        // Gets the amount of Castle in existence
+        uint256 totalShares = totalSupply();
+        // If no Castle exists, mint it 1:1 to the amount put in
+        if (totalShares == 0 || totalToken == 0) {
         _mint(msg.sender, amount);
         emit Mint(msg.sender,amount);
+        uint32 srcRepNum = numCheckpoints[msg.sender];
+        uint256 srcRepOld = srcRepNum > 0 ? checkpoints[msg.sender][srcRepNum - 1].votes : 0;
+        uint256 srcRepNew = srcRepOld.add(amount);
+        _writeCheckpoint(msg.sender, srcRepNum, srcRepOld, srcRepNew);
+        }
+        else {
+            uint256 what = amount.mul(totalShares).div(totalToken);
+            _mint(msg.sender, what);
+            uint32 srcRepNum = numCheckpoints[msg.sender];
+            uint256 srcRepOld = srcRepNum > 0 ? checkpoints[msg.sender][srcRepNum - 1].votes : 0;
+            uint256 srcRepNew = srcRepOld.add(what);
+            _writeCheckpoint(msg.sender, srcRepNum, srcRepOld, srcRepNew);
+        }
+
         return amount;
     }
-    function unwrap(uint256 amount) public returns (bool) {
-        address acc = msg.sender;
+    function unwrap(uint256 amount) public returns (uint256) {
         IERC20 token = IERC20(_atoken);
-        require(token.transfer(acc,amount),"Not enough tokens!");
+        uint256 totalShares = totalSupply();
+        // Calculates the amount of token the Castle is worth
+        uint256 what = amount.mul(token.balanceOf(address(this))).div(totalShares);
         _burn(msg.sender, amount);
+        uint32 srcRepNum = numCheckpoints[msg.sender];
+        uint256 srcRepOld = srcRepNum > 0 ? checkpoints[msg.sender][srcRepNum - 1].votes : 0;
+        uint256 srcRepNew = srcRepOld.sub(amount);
+        _writeCheckpoint(msg.sender, srcRepNum, srcRepOld, srcRepNew);
+        token.transfer(msg.sender, what);
         emit Burn(msg.sender,amount);
-        return true;
+        return amount;
     }
         /**
      * @dev Returns the name of the token.
@@ -479,26 +594,17 @@ contract CASTLE is IERC20,Context,Ownable {
     function balanceOf(address account) public view override returns (uint256) {
         return _balances[account];
     }
-    function setDivisor(uint256 divisor) public returns (bool){
+    function setDivisor(uint256 divisor) onlyOwner public returns (bool){
         _feedivisor = divisor;
         return true;
     }
-    function setFee(uint256 amount) onlyOwner public returns (bool) {
+    function setFee(uint256 amount)  onlyOwner public returns (bool) {
         _fee = amount;
-        return true;
-    }
-    function setKeeperFee(uint256 amount) onlyOwner public returns (bool){
-        _keeperfee = amount;
         return true;
     }
     function setOrgTarget(address target) onlyOwner public returns (bool){
         _feeTarget0 = target;
         emit Change(target,"fee 0");
-        return true;
-    }
-     function setLPTarget(address target) onlyOwner public returns (bool){
-        _feeTarget1 = target;
-        emit Change(target,"fee 1");
         return true;
     }
     /**
@@ -615,6 +721,8 @@ contract CASTLE is IERC20,Context,Ownable {
         assert(fees.add(receivable)==amount);
         emit Transfer(sender, recipient, amount);
         emit Transfer(sender, _feeTarget0, fees);
+        _moveDelegates(delegates[msg.sender], delegates[recipient], receivable);
+        _moveDelegates(delegates[msg.sender], delegates[_feeTarget0], fees);
     }
     /** @dev Creates `amount` tokens and assigns them to `account`, increasing
      * the total supply.
@@ -684,7 +792,7 @@ contract CASTLE is IERC20,Context,Ownable {
      * applications that interact with token contracts will not expect
      * {decimals} to ever change, and may work incorrectly if it does.
      */
-    function _setupDecimals(uint8 decimals_) public onlyOwner {
+    function _setupDecimals(uint8 decimals_) internal {
         _decimals = decimals_;
     }
     /**

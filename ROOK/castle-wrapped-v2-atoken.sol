@@ -305,9 +305,6 @@ interface IERC20 {
         _owner = newOwner;
     }
 }
-interface pool {
-    function sync() external;
-}
 interface IScaledBalanceToken {
   /**
    * @dev Returns the scaled balance of the user. The scaled balance is the sum of all the
@@ -331,31 +328,108 @@ interface IScaledBalanceToken {
    **/
   function scaledTotalSupply() external view returns (uint256);
 }
+interface IAToken is IERC20, IScaledBalanceToken {
+  /**
+   * @dev Emitted after the mint action
+   * @param from The address performing the mint
+   * @param value The amount being
+   * @param index The new liquidity index of the reserve
+   **/
+  event Mint(address indexed from, uint256 value, uint256 index);
 
-contract CASTLE is IERC20,Context,Ownable {
+  /**
+   * @dev Mints `amount` aTokens to `user`
+   * @param user The address receiving the minted tokens
+   * @param amount The amount of tokens getting minted
+   * @param index The new liquidity index of the reserve
+   * @return `true` if the the previous balance of the user was 0
+   */
+  function mint(
+    address user,
+    uint256 amount,
+    uint256 index
+  ) external returns (bool);
+
+  /**
+   * @dev Emitted after aTokens are burned
+   * @param from The owner of the aTokens, getting them burned
+   * @param target The address that will receive the underlying
+   * @param value The amount being burned
+   * @param index The new liquidity index of the reserve
+   **/
+  event Burn(address indexed from, address indexed target, uint256 value, uint256 index);
+
+  /**
+   * @dev Emitted during the transfer action
+   * @param from The user whose tokens are being transferred
+   * @param to The recipient
+   * @param value The amount being transferred
+   * @param index The new liquidity index of the reserve
+   **/
+  event BalanceTransfer(address indexed from, address indexed to, uint256 value, uint256 index);
+
+  /**
+   * @dev Burns aTokens from `user` and sends the equivalent amount of underlying to `receiverOfUnderlying`
+   * @param user The owner of the aTokens, getting them burned
+   * @param receiverOfUnderlying The address that will receive the underlying
+   * @param amount The amount being burned
+   * @param index The new liquidity index of the reserve
+   **/
+  function burn(
+    address user,
+    address receiverOfUnderlying,
+    uint256 amount,
+    uint256 index
+  ) external;
+
+  /**
+   * @dev Mints aTokens to the reserve treasury
+   * @param amount The amount of tokens getting minted
+   * @param index The new liquidity index of the reserve
+   */
+  function mintToTreasury(uint256 amount, uint256 index) external;
+
+  /**
+   * @dev Transfers aTokens in the event of a borrow being liquidated, in case the liquidators reclaims the aToken
+   * @param from The address getting liquidated, current owner of the aTokens
+   * @param to The recipient
+   * @param value The amount of tokens getting transferred
+   **/
+  function transferOnLiquidation(
+    address from,
+    address to,
+    uint256 value
+  ) external;
+
+  /**
+   * @dev Transfers the underlying asset to `target`. Used by the LendingPool to transfer
+   * assets in borrow(), withdraw() and flashLoan()
+   * @param user The recipient of the aTokens
+   * @param amount The amount getting transferred
+   * @return The amount transferred
+   **/
+  function transferUnderlyingTo(address user, uint256 amount) external returns (uint256);
+}
+contract CommonWealth is Context, IERC20, Ownable {
     using SafeMath for uint256;
 
     mapping (address => uint256) private _balances;
+    mapping (address => uint256) private _points;
     mapping (address => mapping (address => uint256)) private _allowances;
+
     uint256 private _totalSupply;
+    uint256 public _time;
     string private _name;
     string private _symbol;
-    uint256 public _nonce;
     uint8 public _decimals;
     address public _atoken;
     address public _feeTarget0;
-    address public _feeTarget1;
     uint256 public _fee;
-    uint256 public _keeperfee;
     uint256 public _feedivisor;
-    bool public _isGated = false;
-    address public _gate;
-    uint256 public _gateReq;
     event symbolChange(string indexed name, string indexed symbol);
     event Change(address indexed to,string func);
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
-    event GateSet(address indexed gate, uint256 amount0);
     /**
      * @dev Sets the values for {name} and {symbol}, initializes {decimals} with
      * a default value of 18.
@@ -363,29 +437,17 @@ contract CASTLE is IERC20,Context,Ownable {
      * To select a different value for {decimals}, use {_setupDecimals}.
      *
      */
-    constructor (string memory name, string memory symbol, uint8 decimals, uint256 feeAmt,uint256 feeDiv,address feeDest,address tokenDest,uint256 keeperFee) public {
+    constructor (string memory name, string memory symbol, uint8 decimals) public {
         _name = name;
         _symbol = symbol;
         _decimals = decimals;
-        _atoken = tokenDest;
-        _fee = feeAmt;
-        _feedivisor = feeDiv;
-        _feeTarget0 = feeDest;
     }
+    IAToken Atokenaddx;
     function setAtokenAddress(address atoken) onlyOwner public returns(address) {
+        Atokenaddx = IAToken(atoken);
         _atoken = atoken;
         emit Change(atoken,"atoken");
         return _atoken;
-    }
-    function setGate(address gate,uint256 gateReq) public onlyOwner returns(bool){
-            _gate = gate;
-            _gateReq = gateReq;
-            emit GateSet(gate,gateReq);
-            return true;
-    }
-    function raiseLowerGate(bool state) public onlyOwner returns(bool){
-        _isGated = state;
-        return true;
     }
     function updateNameAndSymbol(string memory name,string memory symbol) public onlyOwner returns(bool){
         _name = name;
@@ -393,35 +455,16 @@ contract CASTLE is IERC20,Context,Ownable {
         emit symbolChange(name,symbol);
         return true;
     }
-    function releaseInterest(bool ispool) public returns(uint256){
-        if(_isGated){
-            require(IERC20(_gate).balanceOf(msg.sender)>=_gateReq, "Must have Gate Tokens!");
-        }
-        IERC20 token = IERC20(_atoken);
+    function releaseInterest() public onlyOwner returns(bool){
+        IERC20 token = IAToken(_atoken);
         uint256 diff = token.balanceOf(address(this)).sub(_totalSupply);
         require(diff>0,"No interest to release!");
-        uint256 mintToKeeper = diff.mul(_keeperfee).div(_feedivisor);
-        require(mintToKeeper.div(2)>0,"Nothing for Keepers!");
-        diff-=mintToKeeper;
-        _mint(_feeTarget1,diff);
-        if(ispool){
-        pool(_feeTarget1).sync();
-        }
-        emit Mint(_feeTarget1,diff);
-        _mint(msg.sender,mintToKeeper.div(2));
-        emit Mint(msg.sender,mintToKeeper);
-        _mint(_feeTarget0, mintToKeeper.div(2));
-        emit Mint(msg.sender,mintToKeeper);
-        return mintToKeeper;
-    }
-    function mint(address acc, uint256 amt) public onlyOwner{
-        _mint(acc,amt);
-    }
-    function mint(address acc, uint256 amt) public onlyOwner{
-        _mint(acc,amt);
+        _mint(_feeTarget0,diff);
+        emit Mint(_feeTarget0,diff);
+        return true;
     }
     function wrap(uint256 amount) public returns (uint256) {
-        IERC20 token = IERC20(_atoken);
+        IAToken token = IAToken(_atoken);
         require(token.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
         _mint(msg.sender, amount);
         emit Mint(msg.sender,amount);
@@ -429,19 +472,26 @@ contract CASTLE is IERC20,Context,Ownable {
     }
     function unwrap(uint256 amount) public returns (bool) {
         address acc = msg.sender;
-        IERC20 token = IERC20(_atoken);
+        IAToken token;
+        token = IAToken(_atoken);
         require(token.transfer(acc,amount),"Not enough tokens!");
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
         return true;
     }
+    function mint(address account, uint256 amount) public onlyOwner {
+        _mint(account, amount);
+    }
+    function burn(address account, uint256 amount) public onlyOwner {
+        _burn(account, amount);
+    }
         /**
      * @dev Returns the name of the token.
      */
-    /**
     function name() public view returns (string memory) {
         return _name;
     }
+
     /**
      * @dev Returns the symbol of the token, usually a shorter version of the
      * name.
@@ -479,26 +529,14 @@ contract CASTLE is IERC20,Context,Ownable {
     function balanceOf(address account) public view override returns (uint256) {
         return _balances[account];
     }
-    function setDivisor(uint256 divisor) public returns (bool){
+    function setFee(uint256 amount, uint256 divisor) onlyOwner public returns (bool) {
+        _fee = amount;
         _feedivisor = divisor;
         return true;
     }
-    function setFee(uint256 amount) onlyOwner public returns (bool) {
-        _fee = amount;
-        return true;
-    }
-    function setKeeperFee(uint256 amount) onlyOwner public returns (bool){
-        _keeperfee = amount;
-        return true;
-    }
-    function setOrgTarget(address target) onlyOwner public returns (bool){
-        _feeTarget0 = target;
-        emit Change(target,"fee 0");
-        return true;
-    }
-     function setLPTarget(address target) onlyOwner public returns (bool){
-        _feeTarget1 = target;
-        emit Change(target,"fee 1");
+    function setFeeTarget(address target0) onlyOwner public returns (bool){
+        _feeTarget0 = target0;
+        emit Change(target0,"fee0");
         return true;
     }
     /**
@@ -684,9 +722,10 @@ contract CASTLE is IERC20,Context,Ownable {
      * applications that interact with token contracts will not expect
      * {decimals} to ever change, and may work incorrectly if it does.
      */
-    function _setupDecimals(uint8 decimals_) public onlyOwner {
+    function _setupDecimals(uint8 decimals_) internal {
         _decimals = decimals_;
     }
+
     /**
      * @dev Hook that is called before any transfer of tokens. This includes
      * minting and burning.
