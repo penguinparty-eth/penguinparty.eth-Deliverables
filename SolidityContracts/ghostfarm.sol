@@ -350,9 +350,9 @@ contract wrappedAAVE is Context, IERC20, Ownable {
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
     event Change(address indexed to,string func);
-    function setFeeDest(address val){
+    function setFeeDest(address val) onlyOwner public returns(address){
         _feedest = val;
-        emit Change(val,"feedest")
+        emit Change(val,"feedest");
         return val;
     }
     function setAAVEAddress(address AAVEAddress) onlyOwner public returns(address) {
