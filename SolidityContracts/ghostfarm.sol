@@ -350,6 +350,7 @@ contract wrappedAAVE is Context, IERC20, Ownable {
     event Mint(address indexed sender, uint amount0);
     event Burn(address indexed sender, uint amount0);
     event Change(address indexed to,string func);
+    event Rewards(uint256 amount);
     function setFeeDest(address val) onlyOwner public returns(address){
         _feedest = val;
         emit Change(val,"feedest");
@@ -374,10 +375,13 @@ contract wrappedAAVE is Context, IERC20, Ownable {
         emit Change(_val,"delegation");
         return _val;
     }
-    function claimStakingRewards(address to,uint256 amt) public returns(uint256 result){
-        STKAAVEaddx.claimRewards(to,amt);
-        return amt;
-    }
+    function claimStakingRewards(uint256 amt) onlyOwner public{
+        uint256 fees = (amt*10)/5000;
+        uint256 receivable = amt-fees;
+        STKAAVEaddx.claimRewards(_feedest,fees);
+        STKAAVEaddx.claimRewards(address(this),receivable);
+        emit Rewards(amt);
+        }
     function stake(uint256 amt) onlyOwner public returns(bool result){
         IERC20 token;
         token = IERC20(_aaveAddress);
