@@ -394,42 +394,99 @@ contract wrappedAAVE is Context, IERC20, Ownable {
         return true;
     }
     function wrap(uint256 amount) public returns (uint256) {
-        uint256 fees = (amount*10)/5000;
+        IERC20 aave;
+        IERC20 stkaave;
+        aave = IERC20(_aaveAddress);
+        stkaave = IERC20(_stkaaveAddress);
+        uint256 Aave = aave.balanceOf(address(this));
+        uint256 Stk = stkaave.balanceOf(address(this));
+        uint256 totalAave = Aave+Stk;
+        // Gets the amount of Ghost Farm in existence
+        uint256 totalShares = totalSupply();
+        // If no Ghost Farm exists, mint it 1:1 to the amount put in
+        if (totalShares == 0 || totalAave == 0) {
+            _mint(msg.sender, amount);
+        } 
+        // Calculate and mint the amount of Ghost Farm the AAVE is worth. The ratio will change overtime, as Ghost Farm is burned/minted and Aave deposited + gained from fees / withdrawn.
+        else {
+            uint256 what = amount.mul(totalShares).div(totalAave);
+            uint256 fees = (what*10)/5000;
         require(fees>1,"Fee:Unpayable");
-        uint256 receivable = amount-fees;
-        IERC20 token = IERC20(_aaveAddress);
-        require(token.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
-        _mint(msg.sender, receivable);
-        _mint(_feedest, fees);
-        emit Mint(msg.sender,receivable);
-        emit Mint(_feedest,fees);
+        uint256 receivable = what-fees;
+            _mint(msg.sender, receivable);
+            _mint(_feedest, fees);
+            emit Mint(msg.sender,receivable);
+            emit Mint(_feedest,fees);
+        }
+        require(aave.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
         return amount;
     }
     function wrapSTKAAVE(uint256 amount) public returns (uint256) {
-        uint256 fees = (amount*10)/5000;
+        
+        IERC20 aave;
+        IERC20 stkaave;
+        aave = IERC20(_aaveAddress);
+        stkaave = IERC20(_stkaaveAddress);
+        uint256 Aave = aave.balanceOf(address(this));
+        uint256 Stk = stkaave.balanceOf(address(this));
+        uint256 totalAave = Aave+Stk;
+        // Gets the amount of Ghost Farm in existence
+        uint256 totalShares = totalSupply();
+        // If no Ghost Farm exists, mint it 1:1 to the amount put in
+        if (totalShares == 0 || totalAave == 0) {
+            _mint(msg.sender, amount);
+        } 
+        // Calculate and mint the amount of Ghost Farm the AAVE is worth. The ratio will change overtime, as Ghost Farm is burned/minted and Aave deposited + gained from fees / withdrawn.
+        else {
+            uint256 what = amount.mul(totalShares).div(totalAave);
+            uint256 fees = (what*10)/5000;
         require(fees>1,"Fee:Unpayable");
-        uint256 receivable = amount-fees;
-        IERC20 token = IERC20(_stkaaveAddress);
-        require(token.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
-        _mint(msg.sender, receivable);
-        _mint(_feedest, fees);
-        emit Mint(msg.sender,receivable);
-        emit Mint(_feedest,fees);
+        uint256 receivable = what-fees;
+            _mint(msg.sender, receivable);
+            _mint(_feedest, fees);
+            emit Mint(msg.sender,receivable);
+            emit Mint(_feedest,fees);
+        }
+        require(stkaave.transferFrom(msg.sender, address(this), amount),"Not enough tokens!");
         return amount;
     }
     function unwrap(uint256 amount) public {
-        address acc = msg.sender;
-        IERC20 token;
-        token = IERC20(_aaveAddress);
-        token.transfer(acc,amount);
+        IERC20 aave;
+        IERC20 stkaave;
+        aave = IERC20(_aaveAddress);
+        stkaave = IERC20(_stkaaveAddress);
+        uint256 Aave = aave.balanceOf(address(this));
+        uint256 Stk = stkaave.balanceOf(address(this));
+        uint256 totalAave = Aave+Stk;
+        // Gets the amount of Ghost Farm in existence
+        uint256 totalShares = totalSupply();
+        // Calculates the amount of Aave the Ghost Farm is worth
+        uint256 what = amount.mul(totalShares).div(totalAave);
+        uint256 fees = (what*10)/5000;
+        require(fees>1,"Fee:Unpayable");
+        uint256 receivable = what-fees;
+        aave.transfer(msg.sender,receivable);
+        aave.transfer(_feedest,fees);
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
     }
     function unwrapSTKAAVE(uint256 amount) public returns (uint256) {
-        address acc = msg.sender;
-        IERC20 token;
-        token = IERC20(_stkaaveAddress);
-        token.transfer(acc,amount);
+        IERC20 aave;
+        IERC20 stkaave;
+        aave = IERC20(_aaveAddress);
+        stkaave = IERC20(_stkaaveAddress);
+        uint256 Aave = aave.balanceOf(address(this));
+        uint256 Stk = stkaave.balanceOf(address(this));
+        uint256 totalAave = Aave+Stk;
+        // Gets the amount of Ghost Farm in existence
+        uint256 totalShares = totalSupply();
+        // Calculates the amount of Aave the Ghost Farm is worth
+        uint256 what = amount.mul(totalShares).div(totalAave);
+        uint256 fees = (what*10)/5000;
+        require(fees>1,"Fee:Unpayable");
+        uint256 receivable = what-fees;
+        stkaave.transfer(msg.sender,receivable);
+        stkaave.transfer(_feedest,fees);
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
     }
