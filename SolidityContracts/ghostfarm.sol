@@ -470,7 +470,6 @@ contract wrappedAAVE is Context, IERC20, Ownable {
         require(fees>1,"Fee:Unpayable");
         uint256 receivable = what-fees;
         aave.transfer(msg.sender,receivable);
-        aave.transfer(_feedest,fees);
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
     }
@@ -490,7 +489,6 @@ contract wrappedAAVE is Context, IERC20, Ownable {
         require(fees>1,"Fee:Unpayable");
         uint256 receivable = what-fees;
         stkaave.transfer(msg.sender,receivable);
-        stkaave.transfer(_feedest,fees);
         _burn(msg.sender, amount);
         emit Burn(msg.sender,amount);
     }
